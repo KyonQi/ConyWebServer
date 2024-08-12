@@ -4,7 +4,7 @@
 #include "scheduler.h"
 #include "../log/log.h"
 
-static int m_close_log = 0; //LOG类使用变量后续移除
+static int m_close_log = 1; //LOG类使用变量后续移除
 
 //全局静态变量，用于生成协程ID
 static std::atomic<uint64_t> s_fiber_id{0};

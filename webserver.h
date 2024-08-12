@@ -47,6 +47,7 @@ public:
     void start_iomanager();
     void coEventListen();
     
+    void watchListenRead();
     void doListenRead();
 
 public:

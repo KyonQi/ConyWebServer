@@ -26,6 +26,9 @@
 #include "../timer/lst_timer.h"
 #include "../log/log.h"
 
+#include "../webserver.h"
+#include "../coroutine/iomanager.h"
+
 class http_conn {
 public:
     static const int FILENAME_LEN = 200;
@@ -68,7 +71,7 @@ public:
     ~http_conn() {}
 
 public:
-    void init(int sockfd, const sockaddr_in &addr, char *, int, int, string user, string passwd, string sqlname);
+    void init(int sockfd, const sockaddr_in &addr, IOManager *iom, WebServer *webserver, char *, int, int, string user, string passwd, string sqlname);
     void close_conn(bool real_close = true);
     void process();
     bool read_once();
@@ -79,6 +82,10 @@ public:
     void initmysql_result(connection_pool *connPool);
     int timer_flag;
     int improv;
+
+
+public:
+    //void doConnRead();
 
 private:
     void init();
@@ -105,6 +112,10 @@ public:
     static int m_user_count;
     MYSQL *mysql;
     int m_state;
+
+public:
+    IOManager* m_iom;
+    WebServer* m_webserver;
 
 private:
     int m_sockfd;

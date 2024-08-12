@@ -112,9 +112,9 @@ void WebServer::start_iomanager() {
     m_iomanager->schedule(coEventListen);
 }
 
-void doListenRead();
+//void WebServer::doListenRead();
 
-void doTimerRead();
+//void doTimerRead();
 
 //启动监听
 void WebServer::coEventListen() {
@@ -166,9 +166,17 @@ void WebServer::coEventListen() {
     Utils::u_pipefd = m_pipefd;
 }
 
+void WebServer::watchListenRead() {
+    LOG_DEBUG("%s", "WebServer::watchListenRead add event");
+    m_iomanager->addEvent(m_listenfd, IOManager::READ, bind(&WebServer::doListenRead, this));
+}
+
 void WebServer::doListenRead() {
-    bool flag = dealclientdata();
-    
+    bool flag = dealclientdata(); //这里connfd会被加入到epoll中，发生在timer的构造函数中，改造后有iomanager处理
+    if (flag == false) {
+        LOG_ERROR("%s", "WebServer::doListenRead connection false");
+    }
+    m_iomanager->schedule(watchListenRead);
 }
 
 
@@ -233,7 +241,7 @@ void WebServer::eventListen()
 
 void WebServer::timer(int connfd, struct sockaddr_in client_address)
 {
-    users[connfd].init(connfd, client_address, m_root, m_CONNTrigmode, m_close_log, m_user, m_passWord, m_databaseName);
+    users[connfd].init(connfd, client_address, m_iomanager, this, m_root, m_CONNTrigmode, m_close_log, m_user, m_passWord, m_databaseName);
 
     //初始化client_data数据
     //创建定时器，设置回调函数和超时时间，绑定用户数据，将定时器添加到链表中
@@ -289,6 +297,7 @@ bool WebServer::dealclientdata()
             return false;
         }
         timer(connfd, client_address);
+        m_iomanager->addEvent(connfd, IOManager::READ, bind(dealwithread, this, connfd));
     }
 
     else
@@ -308,6 +317,7 @@ bool WebServer::dealclientdata()
                 break;
             }
             timer(connfd, client_address);
+            m_iomanager->addEvent(connfd, IOManager::READ, bind(dealwithread, this, connfd));
         }
         return false;
     }

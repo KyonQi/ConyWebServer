@@ -70,13 +70,14 @@ void addfd(int epollfd, int fd, bool one_shot, int TRIGMode)
 }
 
 //从内核时间表删除描述符
-void removefd(int epollfd, int fd)
+void removefd(int epollfd, int fd, http_conn *conn)
 {
-    epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, 0);
+    //epoll_ctl(epollfd, EPOLL_CTL_DEL, fd, 0); 由iomanager处理
+    conn->m_iom->cancelAll(fd); 
     close(fd);
 }
 
-//将事件重置为EPOLLONESHOT
+//添加新的关注事件ev进入fd中
 void modfd(int epollfd, int fd, int ev, int TRIGMode)
 {
     epoll_event event;
@@ -97,19 +98,24 @@ int http_conn::m_epollfd = -1;
 void http_conn::close_conn(bool real_close) {
     if (real_close && (m_sockfd != -1)) {
         printf("close %d\n", m_sockfd);
-        removefd(m_epollfd, m_sockfd);
+        removefd(m_epollfd, m_sockfd, this);
         m_sockfd = -1;
         m_user_count--;
     }
 }
 
 //初始化连接，外部调用初始化套接字地址
-void http_conn::init(int sockfd, const sockaddr_in &addr, char *root, int TRIGMode,
-                     int close_log, string user, string passwd, string sqlname) {
+void http_conn::init(int sockfd, const sockaddr_in &addr, IOManager *iom, WebServer *webserver,
+                     char *root, int TRIGMode, int close_log, string user, string passwd, string sqlname) {
     m_sockfd = sockfd;
     m_address = addr;
+
+    m_iom = iom; //每个连接都要有归属的iomanager指针
+    m_webserver = webserver; //主线程拥有的webserver
     
-    addfd(m_epollfd, sockfd, true, m_TRIGMode);
+    //addfd(m_epollfd, sockfd, true, m_TRIGMode); 
+    //交给IOManager去增添fd
+    //IOManager::GetThis()->addEvent(sockfd, IOManager::READ, bind(doConnRead, this)); //边缘触发，可读回调
     m_user_count++;
 
     //当浏览器出现连接重置时，可能是网站根目录出错或http响应格式出错或者访问的文件中内容完全为空
@@ -124,9 +130,19 @@ void http_conn::init(int sockfd, const sockaddr_in &addr, char *root, int TRIGMo
     init();
 }
 
+
+// void http_conn::doConnRead() {
+//     server.dealwithread(m_sockfd);
+
+// }
+
+
 //初始化新接受的连接
 //check_state默认为分析请求行状态
 void http_conn::init() {
+    m_iom = NULL;
+    m_webserver = NULL;
+
     mysql = NULL;
     bytes_to_send = 0;
     bytes_have_send = 0;
@@ -506,7 +522,8 @@ void http_conn::unmap() {
 bool http_conn::write() {
     int temp = 0;
     if (bytes_to_send == 0) {
-        modfd(m_epollfd, m_sockfd, EPOLLIN, m_TRIGMode);
+        //modfd(m_epollfd, m_sockfd, EPOLLIN, m_TRIGMode); //修改有IOManager做事件处理
+        m_iom->addEvent(m_sockfd, IOManager::READ, bind(WebServer::dealwithread, m_webserver, m_sockfd));
         init();
         return true;
     }
@@ -516,8 +533,9 @@ bool http_conn::write() {
         //判断条件，数据已全部发送完
         if (temp < 0) {
             if (errno == EAGAIN) {
-                //成功发送完成，重新注册事件
-                modfd(m_epollfd, m_sockfd, EPOLLOUT, m_TRIGMode);
+                //EAGAIN，重新注册可写事件
+                //modfd(m_epollfd, m_sockfd, EPOLLOUT, m_TRIGMode);
+                m_iom->addEvent(m_sockfd, IOManager::WRITE, bind(WebServer::dealwithwrite, m_webserver, m_sockfd));
                 return true;
             }
             unmap();
@@ -539,7 +557,8 @@ bool http_conn::write() {
         //长连接重置http类实例
         if (bytes_to_send <= 0) {
             unmap();
-            modfd(m_epollfd, m_sockfd, EPOLLIN, m_TRIGMode);
+            //modfd(m_epollfd, m_sockfd, EPOLLIN, m_TRIGMode);
+            m_iom->addEvent(m_sockfd, IOManager::READ, bind(WebServer::dealwithread, m_webserver, m_sockfd));
             if (m_linger) {
                 init();
                 return true;
@@ -654,14 +673,18 @@ bool http_conn::process_write(HTTP_CODE ret) {
 void http_conn::process() {
     HTTP_CODE read_ret = process_read();
     if (read_ret == NO_REQUEST) {
-        modfd(m_epollfd, m_sockfd, EPOLLIN, m_TRIGMode);
+        //modfd(m_epollfd, m_sockfd, EPOLLIN, m_TRIGMode);
+        m_iom->addEvent(m_sockfd, IOManager::READ, bind(WebServer::dealwithread, m_webserver, m_sockfd));
         return;
     }
     bool write_ret = process_write(read_ret);
     if (!write_ret) {
         close_conn();
     }
-    modfd(m_epollfd, m_sockfd, EPOLLOUT, m_TRIGMode);
+    //modfd(m_epollfd, m_sockfd, EPOLLOUT, m_TRIGMode);
+    //交给IOManger实现epoll事件的添加 添加关注可写事件
+    m_iom->addEvent(m_sockfd, IOManager::WRITE, bind(WebServer::dealwithwrite, m_webserver, m_sockfd));
+    
 }
 
 

@@ -2,7 +2,7 @@
 
 #include "scheduler.h"
 
-static int m_close_log = 0;
+static int m_close_log = 1;
 
 // 当前线程的调度器，统一调度器下所有线程共享同一实例
 static thread_local Scheduler *t_scheduler = nullptr;

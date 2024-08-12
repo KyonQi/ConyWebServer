@@ -5,7 +5,7 @@
 #include "iomanager.h"
 #include "../log/log.h"
 
-static int m_close_log = 0;
+static int m_close_log = 1;
 
 //获取事件的上下文，根据读、写分别返回对应的事件
 IOManager::FdContext::EventContext& IOManager::FdContext::getEventContext(IOManager::Event event) {

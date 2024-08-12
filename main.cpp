@@ -33,7 +33,7 @@ int main(int argc, char *argv[]) {
     //开启协程调度器
     server.start_iomanager();
 
-    server.coEventListen();
+    //server.coEventListen();
 
     //运行
     server.eventLoop();
